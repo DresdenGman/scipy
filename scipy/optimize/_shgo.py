@@ -565,7 +565,7 @@ class SHGO:
                 'old'
             )
             for cons in self.constraints:
-                if cons['type'] in ('ineq'):
+                if cons['type'] == 'ineq':
                     self.g_cons.append(cons['fun'])
                     try:
                         self.g_args.append(cons['args'])

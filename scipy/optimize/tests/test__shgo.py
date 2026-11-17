@@ -1210,6 +1210,49 @@ def test_equality_constraints():
     )
     assert_allclose(np.sum(res.x), 1.0)
 
+
+def test_equality_constraint_not_treated_as_inequality():
+    # gh-21942: an 'eq' constraint was collected into `g_cons` because
+    # `'eq' in 'ineq'` is True, so the sampling/triangulation layers
+    # treated it as the inequality h(x) >= 0.  With h(x) <= 0 everywhere
+    # and h(x) == 0 only at a single point, no sampling point was ever
+    # feasible and shgo reported "Failed to find a feasible minimizer
+    # point", even though the equality-constrained problem has a
+    # well-defined solution that the local minimizer can reach.
+    # The constrained minimum of f over h(x) == 0 is x = (0.3, 0.7)
+    # with fun = 0.08.
+    def f(x):
+        return (x[0] - 0.1) ** 2 + (x[1] - 0.9) ** 2
+
+    def h(x):
+        return -((x[0] - 0.3) ** 2 + (x[1] - 0.7) ** 2)
+
+    constraints = {'type': 'eq', 'fun': h}
+    for options in (None, {'infty_constraints': False}):
+        res = shgo(f, bounds=[(0, 1)] * 2, constraints=constraints,
+                   options=options)
+        assert res.success
+        # Only loose tolerances are asserted: h has zero gradient at the
+        # solution, so the local minimizer's stopping rule on |h(x)| only
+        # pins x to about sqrt(tol).
+        assert_allclose(res.x, [0.3, 0.7], atol=1e-3)
+        assert_allclose(res.fun, 0.08, atol=1e-3)
+
+    # An 'ineq' constraint alongside the 'eq' constraint must still be
+    # collected into g_cons, while the 'eq' constraint must not be.
+    def g(x):
+        return x[0] - 0.2  # >= 0, non-binding at the solution
+
+    mixed = ({'type': 'ineq', 'fun': g}, {'type': 'eq', 'fun': h})
+    shc = SHGO(f, [(0, 1)] * 2, constraints=mixed)
+    assert len(shc.g_cons) == 1
+    assert shc.g_cons[0] is g
+    res = shgo(f, bounds=[(0, 1)] * 2, constraints=mixed)
+    assert res.success
+    assert_allclose(res.x, [0.3, 0.7], atol=1e-3)
+    assert_allclose(res.fun, 0.08, atol=1e-3)
+
+
 def test_gh16971():
     def cons(x):
         return np.sum(x**2) - 0
